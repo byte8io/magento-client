@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Webapi:etc/webapi.xsd">
+    <!--
+        Canonical Magento entity endpoints — consumed by apps/ledger to
+        materialise data for translation into Sage / Xero / future
+        provider shapes. Shape is the Magento canonical (snake_case)
+        verbatim per ledger-core/src/canonical/*.rs — when that crate
+        changes, these serializers must change in lockstep.
+
+        Auth via the per-install Magento Integration Token minted by a
+        per-provider module's IntegrationToken/Generate controller.
+        The token grants both the per-provider setup ACL and this
+        shared Byte8_Client::byte8_webapi ACL.
+    -->
+    <!--
+        Lightweight liveness probe for ledger's proactive health loop.
+        Same ACL as the canonical routes so the probe exercises the
+        real auth surface — pointing the probe at a Magento core route
+        gives false-positive 401s (the synthetic JWT user has no ACL
+        for core resources).
+    -->
+    <route method="GET" url="/V1/byte8/ping">
+        <service class="Byte8\Client\Api\PingInterface" method="ping"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <!--
+        Lists every installed payment method so the ledger dashboard can
+        render a real dropdown for `sync_policy.payment_method_map`
+        instead of a free-form text input. Same ACL as the canonical
+        routes — the synthetic JWT user is already authorised for this
+        resource on paired tenants.
+    -->
+    <route method="GET" url="/V1/byte8/payment-methods">
+        <service class="Byte8\Client\Api\PaymentMethodsInterface" method="list"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <route method="GET" url="/V1/byte8/invoice/:id">
+        <service class="Byte8\Client\Api\Canonical\InvoiceRepositoryInterface" method="get"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <route method="GET" url="/V1/byte8/customer/:id">
+        <service class="Byte8\Client\Api\Canonical\ContactRepositoryInterface" method="get"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <route method="GET" url="/V1/byte8/creditmemo/:id">
+        <service class="Byte8\Client\Api\Canonical\CreditMemoRepositoryInterface" method="get"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <route method="GET" url="/V1/byte8/payment/:id">
+        <service class="Byte8\Client\Api\Canonical\PaymentRepositoryInterface" method="get"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <route method="GET" url="/V1/byte8/product/:id">
+        <service class="Byte8\Client\Api\Canonical\ProductRepositoryInterface" method="get"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+    <!--
+        PR7. Inbound from ledger worker (POST after every terminal
+        SyncRun::mark_*). UPSERTs `byte8_entity_sync_state` keyed on
+        (entity_type, magento_id, provider). The Magento admin grids
+        LEFT JOIN against this table to render the "Sage Status" chip
+        without round-tripping to the dashboard. Same JWT-auth as the
+        canonical routes.
+    -->
+    <route method="POST" url="/V1/byte8/sync-state">
+        <service class="Byte8\Client\Api\SyncStateUpsertInterface" method="upsert"/>
+        <resources>
+            <resource ref="Byte8_Client::byte8_webapi"/>
+        </resources>
+    </route>
+</routes>

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!--
+        Register Byte8\Client\Model\Authorization\JwtUserContext in the
+        composite chain at sortOrder 5 — BEFORE Magento's own
+        TokenUserContext (sortOrder 10). Our context looks at the
+        Authorization header; if it's a Byte8-iss JWT it verifies and
+        resolves. Otherwise it returns (null,null) and the chain falls
+        through to the standard handlers, which remain fully functional
+        for admin/customer/integration tokens on non-Byte8 routes.
+
+        ResetAfterRequestInterface is honoured — sharing the composite
+        across requests is safe because JwtUserContext::_resetState()
+        zeroes its cached fields.
+    -->
+    <type name="Magento\Authorization\Model\CompositeUserContext">
+        <arguments>
+            <argument name="userContexts" xsi:type="array">
+                <item name="byte8JwtUserContext" xsi:type="array">
+                    <item name="type" xsi:type="object">Byte8\Client\Model\Authorization\JwtUserContext\Proxy</item>
+                    <item name="sortOrder" xsi:type="string">5</item>
+                </item>
+            </argument>
+        </arguments>
+    </type>
+</config>

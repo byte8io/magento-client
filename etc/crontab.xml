@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
+    <group id="default">
+        <job name="byte8_outbox_drain" instance="Byte8\Client\Cron\OutboxDrain" method="execute">
+            <schedule>* * * * *</schedule>
+        </job>
+        <!--
+            Daily garbage collection of the `succeeded` audit trail —
+            03:17 UTC to dodge the pile of scheduled jobs at top-of-hour
+            and midnight. Never touches pending or dead_lettered rows;
+            the repository's purge method enforces the status filter.
+        -->
+        <job name="byte8_outbox_gc" instance="Byte8\Client\Cron\OutboxGc" method="execute">
+            <schedule>17 3 * * *</schedule>
+        </job>
+    </group>
+</config>

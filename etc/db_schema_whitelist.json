@@ -1,0 +1,26 @@
+{
+    "byte8_event_outbox": {
+        "column": {
+            "entity_id": true,
+            "idempotency_key": true,
+            "event_name": true,
+            "payload": true,
+            "attempts": true,
+            "next_attempt_at": true,
+            "last_error": true,
+            "created_at": true,
+            "status": true,
+            "last_status_code": true,
+            "last_attempt_at": true
+        },
+        "constraint": {
+            "PRIMARY": true,
+            "BYTE8_EVENT_OUTBOX_IDEMPOTENCY_KEY": true
+        },
+        "index": {
+            "BYTE8_EVENT_OUTBOX_NEXT_ATTEMPT_AT": true,
+            "BYTE8_EVENT_OUTBOX_STATUS_NEXT_ATTEMPT_AT": true,
+            "BYTE8_EVENT_OUTBOX_STATUS": true
+        }
+    }
+}

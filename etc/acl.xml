@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Acl/etc/acl.xsd">
+    <acl>
+        <resources>
+            <resource id="Magento_Backend::admin">
+                <resource id="Byte8_Client::config" title="Byte8 Client" sortOrder="10"/>
+                <resource id="Byte8_Client::byte8_webapi"
+                          title="Byte8 Canonical Webapi"
+                          translate="title"
+                          sortOrder="998"/>
+            </resource>
+        </resources>
+    </acl>
+</config>

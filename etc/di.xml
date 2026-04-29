@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Byte8\Client\Api\ByteClientInterface" type="Byte8\Client\Model\ByteClient"/>
+    <preference for="Byte8\Client\Api\ClientConfigInterface" type="Byte8\Client\Model\ClientConfig"/>
+    <preference for="Byte8\Client\Api\Data\OutboxEventInterface" type="Byte8\Client\Model\OutboxEvent"/>
+    <preference for="Byte8\Client\Api\OutboxEventRepositoryInterface" type="Byte8\Client\Model\OutboxEventRepository"/>
+    <preference for="Byte8\Client\Api\Data\EntitySyncStateInterface" type="Byte8\Client\Model\EntitySyncState"/>
+    <preference for="Byte8\Client\Api\EntitySyncStateRepositoryInterface" type="Byte8\Client\Model\EntitySyncStateRepository"/>
+    <preference for="Byte8\Client\Api\SyncStateUpsertInterface" type="Byte8\Client\Model\SyncStateUpsert"/>
+    <preference for="Byte8\Client\Api\KeyDerivationInterface" type="Byte8\Client\Model\KeyDerivation"/>
+    <preference for="Byte8\Client\Api\PingInterface" type="Byte8\Client\Model\Ping"/>
+    <preference for="Byte8\Client\Api\PaymentMethodsInterface" type="Byte8\Client\Model\PaymentMethods"/>
+    <preference for="Byte8\Client\Api\Canonical\ContactRepositoryInterface" type="Byte8\Client\Model\Canonical\ContactRepository"/>
+    <preference for="Byte8\Client\Api\Canonical\InvoiceRepositoryInterface" type="Byte8\Client\Model\Canonical\InvoiceRepository"/>
+    <preference for="Byte8\Client\Api\Canonical\CreditMemoRepositoryInterface" type="Byte8\Client\Model\Canonical\CreditMemoRepository"/>
+    <preference for="Byte8\Client\Api\Canonical\PaymentRepositoryInterface" type="Byte8\Client\Model\Canonical\PaymentRepository"/>
+    <preference for="Byte8\Client\Api\Canonical\ProductRepositoryInterface" type="Byte8\Client\Model\Canonical\ProductRepository"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\AddressInterface" type="Byte8\Client\Model\Canonical\Data\Address"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\ContactInterface" type="Byte8\Client\Model\Canonical\Data\Contact"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\InvoiceInterface" type="Byte8\Client\Model\Canonical\Data\Invoice"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\InvoiceLineInterface" type="Byte8\Client\Model\Canonical\Data\InvoiceLine"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\CreditMemoInterface" type="Byte8\Client\Model\Canonical\Data\CreditMemo"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\PaymentInterface" type="Byte8\Client\Model\Canonical\Data\Payment"/>
+    <preference for="Byte8\Client\Api\Canonical\Data\ProductInterface" type="Byte8\Client\Model\Canonical\Data\Product"/>
+
+    <!-- Dedicated log channel so Byte8 events don't drown in system.log -->
+    <virtualType name="Byte8\Client\VirtualLogHandler" type="Magento\Framework\Logger\Handler\Base">
+        <arguments>
+            <argument name="fileName" xsi:type="string">var/log/byte8/client.log</argument>
+        </arguments>
+    </virtualType>
+    <virtualType name="Byte8\Client\VirtualLogger" type="Monolog\Logger">
+        <arguments>
+            <argument name="name" xsi:type="string">byte8</argument>
+            <argument name="handlers" xsi:type="array">
+                <item name="system" xsi:type="object">Byte8\Client\VirtualLogHandler</item>
+            </argument>
+        </arguments>
+    </virtualType>
+    <type name="Byte8\Client\Model\ByteClient">
+        <arguments>
+            <argument name="logger" xsi:type="object">Byte8\Client\VirtualLogger</argument>
+        </arguments>
+    </type>
+    <type name="Byte8\Client\Cron\OutboxDrain">
+        <arguments>
+            <argument name="logger" xsi:type="object">Byte8\Client\VirtualLogger</argument>
+        </arguments>
+    </type>
+    <type name="Byte8\Client\Cron\OutboxGc">
+        <arguments>
+            <argument name="logger" xsi:type="object">Byte8\Client\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Inbound JWT auth: our synthetic user context + the ACL short-circuit. -->
+    <type name="Byte8\Client\Model\Authorization\JwtUserContext">
+        <arguments>
+            <argument name="logger" xsi:type="object">Byte8\Client\VirtualLogger</argument>
+        </arguments>
+    </type>
+    <type name="Magento\Framework\Authorization">
+        <plugin name="byte8_client_synthetic_acl"
+                type="Byte8\Client\Plugin\Authorization\SyntheticAclPlugin"
+                sortOrder="10"/>
+    </type>
+
+    <!-- CLI -->
+    <type name="Magento\Framework\Console\CommandListInterface">
+        <arguments>
+            <argument name="commands" xsi:type="array">
+                <item name="byte8_sage_outbox_inspect"
+                      xsi:type="object">Byte8\Client\Console\Command\OutboxInspectCommand</item>
+                <item name="byte8_sage_outbox_requeue"
+                      xsi:type="object">Byte8\Client\Console\Command\OutboxRequeueCommand</item>
+                <item name="byte8_sage_outbox_cleanup"
+                      xsi:type="object">Byte8\Client\Console\Command\OutboxCleanupCommand</item>
+            </argument>
+        </arguments>
+    </type>
+</config>

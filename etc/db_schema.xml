@@ -1,0 +1,139 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Byte8 Ltd. All rights reserved.
+ * See LICENSE.txt for license details.
+ */
+-->
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
+    <!--
+        Primary queue for every outbound Byte8 event. Observers always
+        enqueue here (never HTTP inline); OutboxDrain does delivery.
+
+        Failure model has two terminal states:
+
+        - `pending`  — in flight. Transient failures (5xx, network,
+                       timeout) update next_attempt_at + attempts; the
+                       drain keeps retrying under exponential backoff
+                       up to BACKOFF_SECONDS.length attempts.
+        - `dead_lettered` — poisoned. Deterministic failures (4xx,
+                       including 422 payload-validation) land here
+                       after the first attempt, with the full response
+                       body captured in `last_error`. The drain never
+                       touches these rows — an operator must inspect
+                       and either fix the mapping + requeue
+                       (`byte8:sage:outbox:requeue`) or delete the row.
+                       Never silently dropped (no TTL).
+        - `succeeded` — delivered. Kept for audit; GC is a future add.
+
+        The status column exists precisely so a mapping bug or missing
+        Sage reference doesn't silently vanish after 24h; 4xx rows
+        persist until an operator decides.
+    -->
+    <table name="byte8_event_outbox" resource="default" engine="innodb"
+           comment="Byte8 SaaS event delivery queue — primary queue (not failure-only fallback)">
+        <column xsi:type="bigint" name="entity_id" unsigned="true" nullable="false" identity="true"
+                comment="Entity ID"/>
+        <column xsi:type="varchar" name="idempotency_key" length="128" nullable="false"
+                comment="Composite key preventing duplicate publishes on observer re-fire"/>
+        <column xsi:type="varchar" name="event_name" length="64" nullable="false"
+                comment="Wire event name, e.g. invoice.paid"/>
+        <column xsi:type="mediumtext" name="payload" nullable="false"
+                comment="JSON payload body as published"/>
+        <column xsi:type="varchar" name="status" length="16" nullable="false" default="pending"
+                comment="pending | dead_lettered | succeeded"/>
+        <column xsi:type="int" name="attempts" nullable="false" default="0"
+                comment="Delivery attempt counter"/>
+        <column xsi:type="int" name="last_status_code" nullable="true"
+                comment="HTTP status code from the last attempt (null if never attempted or network error)"/>
+        <column xsi:type="timestamp" name="last_attempt_at" nullable="true"
+                comment="Timestamp of the last delivery attempt — drives the audit trail"/>
+        <column xsi:type="timestamp" name="next_attempt_at" nullable="true"
+                comment="Earliest next retry timestamp — drain skips pending rows in the future"/>
+        <column xsi:type="text" name="last_error" nullable="true"
+                comment="Last failure message / response body for admin visibility"/>
+        <column xsi:type="timestamp" name="created_at" nullable="false" default="CURRENT_TIMESTAMP"
+                comment="Row creation timestamp"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <constraint xsi:type="unique" referenceId="BYTE8_EVENT_OUTBOX_IDEMPOTENCY_KEY">
+            <column name="idempotency_key"/>
+        </constraint>
+        <!-- Drain queries: WHERE status='pending' AND next_attempt_at <= NOW() ORDER BY next_attempt_at -->
+        <index referenceId="BYTE8_EVENT_OUTBOX_STATUS_NEXT_ATTEMPT_AT" indexType="btree">
+            <column name="status"/>
+            <column name="next_attempt_at"/>
+        </index>
+        <!-- Admin banner: SELECT COUNT(*) WHERE status='dead_lettered' -->
+        <index referenceId="BYTE8_EVENT_OUTBOX_STATUS" indexType="btree">
+            <column name="status"/>
+        </index>
+    </table>
+
+    <!--
+        Magento-side mirror of ledger sync state, keyed on
+        (entity_type, magento_id, provider). PR7.
+
+        Read model only — never the source of truth. Two writers:
+
+        - `ByteClient::enqueueEvent` UPSERTs a row with `sync_status =
+          'pending'` immediately when an observer publishes (e.g.
+          invoice.created). Guarantees the admin grid renders a chip
+          *immediately* after the merchant raises an invoice, without
+          waiting for the cron drain or the ledger callback.
+        - `POST /V1/byte8/sync-state` (inbound from ledger worker)
+          UPSERTs the terminal outcome (`synced` / `skipped` / `failed`)
+          when the ledger sync_run terminates.
+
+        Magento admin grids LEFT JOIN against this table on
+        `(entity_type, magento_id, provider)` to render the "Sage
+        Status" chip — see view/adminhtml/ui_component/sales_*_grid.xml
+        in `module-sage-accounting`.
+
+        Why a separate table from `byte8_event_outbox`: the outbox is a
+        transport queue (append, drain by next_attempt_at, GC). Nothing
+        in the admin UI ever reads it. Adding entity-keyed indexes there
+        would cost write-amplification on every event for zero read
+        benefit. The mirror table is the read-side.
+    -->
+    <table name="byte8_entity_sync_state" resource="default" engine="innodb"
+           comment="Magento-side mirror of ledger sync outcomes — drives the Sage Status chip on admin grids">
+        <column xsi:type="bigint" name="entity_id" unsigned="true" nullable="false" identity="true"
+                comment="Entity ID"/>
+        <column xsi:type="varchar" name="entity_type" length="32" nullable="false"
+                comment="invoice | creditmemo | customer | product — matches the ledger-side mapping"/>
+        <column xsi:type="bigint" name="magento_id" unsigned="true" nullable="false"
+                comment="Magento entity id of the synced row"/>
+        <column xsi:type="varchar" name="provider" length="32" nullable="false"
+                comment="sage_accounting | xero | ... — matches connector_bindings.provider on the ledger side"/>
+        <column xsi:type="varchar" name="sync_status" length="16" nullable="false" default="pending"
+                comment="pending | synced | skipped | failed"/>
+        <column xsi:type="varchar" name="provider_entity_id" length="64" nullable="true"
+                comment="Provider's opaque entity id (Sage UUID) when sync_status='synced'"/>
+        <column xsi:type="varchar" name="provider_reference" length="64" nullable="true"
+                comment="Provider's human-readable reference (e.g. SI-27) — populated by ledger if known; v1.1+ scope"/>
+        <column xsi:type="varchar" name="skip_reason" length="64" nullable="true"
+                comment="Stable code from sync_policy::reasons::* when sync_status='skipped'"/>
+        <column xsi:type="varchar" name="error_code" length="64" nullable="true"
+                comment="Classified error code from ledger queue_drain::classify_error when sync_status='failed'"/>
+        <column xsi:type="timestamp" name="last_sync_at" nullable="false" default="CURRENT_TIMESTAMP"
+                comment="Timestamp of the last write — drives 'last synced X minutes ago' on the detail page"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <!--
+            Composite uniqueness — every (entity, provider) pair has at
+            most one mirror row. UPSERTs from both sides (write-through
+            from enqueueEvent, terminal-state callback from ledger) target
+            this key. The same index also serves the grid LEFT JOIN — see
+            ResourceModel\EntitySyncState\Collection.
+        -->
+        <constraint xsi:type="unique" referenceId="BYTE8_ENTITY_SYNC_STATE_ENTITY_PROVIDER">
+            <column name="entity_type"/>
+            <column name="magento_id"/>
+            <column name="provider"/>
+        </constraint>
+    </table>
+</schema>
