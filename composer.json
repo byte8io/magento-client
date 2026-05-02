@@ -6,7 +6,7 @@
         "byte8/module-core": "*"
     },
     "type": "magento2-module",
-    "license": "EULA",
+    "license": "proprietary",
     "autoload": {
         "files": [
             "registration.php"
@@ -15,5 +15,5 @@
             "Byte8\\Client\\": ""
         }
     },
-    "version": "1.0.0"
+    "version": "1.0.1"
 }
